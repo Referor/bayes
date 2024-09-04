@@ -1,29 +1,24 @@
 import streamlit as st
-from math import sqrt
+import numpy as np
 
 # Функция для вычисления вероятности по теореме Байеса
 def bayes_update(prior, likelihood, false_positive_rate):
     denominator = (likelihood * prior) + (false_positive_rate * (1 - prior))
     posterior = (likelihood * prior) / denominator
-    # Проверка границ вероятности
-    posterior = max(0, min(1, posterior))
     return posterior
 
-# Функция для расчета доверительного интервала с учетом генеральной совокупности
-def confidence_interval(p, n_interviews, n_population, z=1.96):
-    # Finite population correction factor
-    fpc = sqrt((n_population - n_interviews) / (n_population - 1))
-    margin_of_error = z * sqrt((p * (1 - p)) / n_interviews) * fpc
-    lower_bound = p - margin_of_error
-    upper_bound = p + margin_of_error
-    # Проверка границ вероятности
-    lower_bound = max(0, lower_bound)
-    upper_bound = min(1, upper_bound)
-    return lower_bound, upper_bound
+# Функция для симуляции Монте-Карло
+def monte_carlo_simulation(p, sample_size, population_size, n_simulations=10000):
+    # Симуляция вероятности наличия проблемы у выборки sample_size
+    simulated_counts = np.random.binomial(n=sample_size, p=p, size=n_simulations)
+    # Перевод в пропорции (доли) от выборки
+    proportions = simulated_counts / sample_size
+    # Масштабирование до размеров генеральной совокупности
+    projected_counts = proportions * population_size
+    return projected_counts
 
-# Заголовок приложения
-st.title("Делаем выводы из интервью на малых данных, используя теорему Байеса")
-st.text("by Андрей Батрименко, Вадим Глазков и GPT")
+# Инициализация данных в Streamlit
+st.title("Анализ вероятности проблемы с использованием Байесовской теоремы и симуляции Монте-Карло")
 
 # Инициализация переменных в session_state
 if "prior" not in st.session_state:
@@ -33,10 +28,10 @@ if "prior" not in st.session_state:
     st.session_state.history = []
     st.session_state.interview_count = 0
 
-# Поля ввода всегда видимы, но становятся неактивными после первого ввода
+# Ввод начальных данных
 st.session_state.prior = st.number_input("Начальная вероятность того, что проблема есть у клиентов, P(A) (например, 0.5 для 50%)", min_value=0.0, max_value=1.0, value=st.session_state.prior, step=0.01, disabled=st.session_state.interview_count > 0)
 st.session_state.likelihood = st.number_input("P(B|A) - Вероятность подтверждения проблемы, с помощью интервью, если она существует (например, 0.8 для 80%)", min_value=0.0, max_value=1.0, value=st.session_state.likelihood, step=0.01, disabled=st.session_state.interview_count > 0)
-st.session_state.false_positive_rate = st.number_input("P(B|¬A) - Вероятность подтверждения проблемы, с помощью интервью, если она не существует (например, 0.3 для 30%)", min_value=0.0, max_value=1.0, value=st.session_state.false_positive_rate, step=0.01, disabled=st.session_state.interview_count > 0)
+st.session_state.false_positive_rate = st.number_input("P(B|¬A) - Вероятность подтверждения проблемы, если она не существует (например, 0.3 для 30%)", min_value=0.0, max_value=1.0, value=st.session_state.false_positive_rate, step=0.01, disabled=st.session_state.interview_count > 0)
 
 # Кнопка для подтверждения результата интервью
 if st.button("Интервью подтвердило проблему"):
@@ -50,13 +45,7 @@ if st.button("Интервью не подтвердило проблему"):
     st.session_state.prior = bayes_update(st.session_state.prior, 1 - st.session_state.likelihood, 1 - st.session_state.false_positive_rate)
     st.session_state.history.append(f"Интервью {st.session_state.interview_count}: Вероятность после опровержения = {st.session_state.prior:.4f}")
 
-# Кнопка для сброса данных и начала заново
-#if st.button("Сбросить и начать заново"):
-#    st.session_state.clear()  # Очищаем все данные в session_state
-    # Используем JavaScript для перезагрузки страницы
-#    st.experimental_rerun()
-
-# Отображение истории обновлений
+# Показ истории обновлений
 st.subheader("История изменений вероятности")
 for entry in st.session_state.history:
     st.write(entry)
@@ -66,28 +55,43 @@ st.subheader("Итоговая информация")
 st.write(f"Всего проведено интервью: {st.session_state.interview_count}")
 st.write(f"Финальная вероятность после всех интервью: {st.session_state.prior:.4f}")
 
-# Итоговый вывод
-if st.session_state.prior > 0.5:
-    st.write("Итог: Проблема, скорее всего, существует.")
-else:
-    st.write("Итог: Проблема, скорее всего, не существует.")
+# Ввод данных для симуляции Монте-Карло
+st.subheader("Симуляция Монте-Карло для оценки числа компаний с проблемой")
+population_size = st.number_input("Размер генеральной совокупности (например, 1000 компаний)", min_value=1, value=1000)
+n_simulations = st.number_input("Количество симуляций Монте-Карло", min_value=100, value=1000, step=100)
 
-# Ввод данных для расчета доверительного интервала
-st.subheader("Расчет доверительного интервала")
-sample_size = st.number_input("Размер генеральной совокупности", min_value=1, value=100)
+# Кнопка для запуска симуляции
+if st.button("Запустить симуляцию Монте-Карло"):
+    projected_counts = monte_carlo_simulation(st.session_state.prior, st.session_state.interview_count, population_size, n_simulations)
 
-# Кнопка для расчета доверительного интервала
-if st.button("Рассчитать доверительный интервал"):
-    lower_bound, upper_bound = confidence_interval(st.session_state.prior, st.session_state.interview_count, sample_size)
-    lower_count = int(lower_bound * sample_size)
-    upper_count = int(upper_bound * sample_size)
-    st.write(f"Доверительный интервал: [{lower_bound:.4f}, {upper_bound:.4f}]")
-    st.write(f"Ожидаемое количество клиентов, имеющих проблему: от {lower_count} до {upper_count}")
+    # Расчет доверительного интервала
+    lower_bound = np.percentile(projected_counts, 2.5)
+    upper_bound = np.percentile(projected_counts, 97.5)
 
-# Пояснение выводов
-st.subheader("Пояснение результатов")
+    # Вывод результатов симуляции
+    st.subheader("Результаты симуляции Монте-Карло")
+    st.write(f"95% доверительный интервал для числа компаний с проблемой: от {int(lower_bound)} до {int(upper_bound)}")
+
+    # Вывод процентного диапазона доверительного интервала
+    lower_percentage = (lower_bound / population_size) * 100
+    upper_percentage = (upper_bound / population_size) * 100
+
+    st.write(f"Процент компаний, которые могут иметь проблему: от {lower_percentage:.2f}% до {upper_percentage:.2f}%")
+
+    # Вывод интерпретации результатов
+    st.write(f"На основе {n_simulations} симуляций, модель прогнозирует, что в генеральной совокупности из {population_size} компаний, примерно от {int(lower_bound)} до {int(upper_bound)} компаний (или от {lower_percentage:.2f}% до {upper_percentage:.2f}%) могут иметь проблему.")
+    
+
+# Пояснение результатов:
+st.subheader("Пояснения к методам")
+
 st.write("""
-    - Вероятность после каждого интервью показывает, насколько уверены мы в существовании проблемы у клиентов.
-    - Доверительный интервал показывает диапазон возможного количества клиентов, которые могут иметь проблему, исходя из вашей выборки и размера генеральной совокупности.
-    - Если финальная вероятность после всех интервью превышает 50%, это значит, что проблема скорее всего существует.
+### Что такое доверительный интервал?
+Доверительный интервал — это диапазон значений, в котором с определенной степенью уверенности (в нашем случае — 95%) можно ожидать, что будет находиться истинное значение. Например, если мы получили доверительный интервал для числа компаний с проблемой от 200 до 300, это означает, что с 95%-ной вероятностью количество компаний с проблемой будет в этом диапазоне.
+
+### Что такое симуляция Монте-Карло?
+Симуляция Монте-Карло — это метод, который использует случайные числа и вероятности для моделирования большого числа возможных сценариев. В нашем случае мы моделируем, сколько компаний может иметь проблему на основе текущей вероятности, проведя тысячи симуляций (например, 10,000).
+
+### Что такое теорема Байеса?
+Теорема Байеса — это метод вычисления вероятности события на основе новых данных. В контексте нашего анализа мы обновляем вероятность существования проблемы (вероятность A) каждый раз, когда получаем новый результат интервью — подтвердилось наличие проблемы или нет. Этот метод позволяет постепенно улучшать наши предсказания на основе поступающих данных.
 """)
