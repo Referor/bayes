@@ -25,7 +25,7 @@ if 'likelihood' not in st.session_state:
     st.session_state.likelihood = 0.8
 
 if 'false_positive_rate' not in st.session_state:
-    st.session_state.false_positive_rate = 0.3
+    st.session_state.false_positive_rate = 0.1
 
 if 'history' not in st.session_state:
     st.session_state.history = []
