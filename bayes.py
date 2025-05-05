@@ -1,115 +1,93 @@
 import streamlit as st
+from scipy.stats import beta
+import matplotlib.pyplot as plt
 import numpy as np
 
-# Функция для вычисления вероятности по теореме Байеса
-def bayes_update(prior, likelihood, false_positive_rate):
-    denominator = (likelihood * prior) + (false_positive_rate * (1 - prior))
-    posterior = (likelihood * prior) / denominator
-    return posterior
+# Инициализация переменных
+if "confirmations" not in st.session_state:
+    st.session_state.confirmations = 0
+if "refutations" not in st.session_state:
+    st.session_state.refutations = 0
 
-# Функция для симуляции Монте-Карло
-def monte_carlo_simulation(p, sample_size, population_size, n_simulations=10000):
-    # Симуляция вероятности наличия проблемы у выборки sample_size
-    simulated_counts = np.random.binomial(n=sample_size, p=p, size=n_simulations)
-    # Перевод в пропорции (доли) от выборки
-    proportions = simulated_counts / sample_size
-    # Масштабирование до размеров генеральной совокупности
-    projected_counts = proportions * population_size
-    return projected_counts
-
-# Инициализация session_state переменных
-if 'prior' not in st.session_state:
-    st.session_state.prior = 0.5
-
-if 'likelihood' not in st.session_state:
-    st.session_state.likelihood = 0.8
-
-if 'false_positive_rate' not in st.session_state:
-    st.session_state.false_positive_rate = 0.1
-
-if 'history' not in st.session_state:
-    st.session_state.history = []
-
-if 'interview_count' not in st.session_state:
-    st.session_state.interview_count = 0
-
-# Заголовок проекта
-st.title("Анализ вероятности наличия проблемы с использованием теоремы Байеса")
+# Интерфейс
+st.title("Анализ результатов проблемных интервью с использованием теоремы Байеса и Бета-распределения")
 st.write("by Андрей Батрименко, Вадим Глазков и GPT")
 
-# Пояснения к значениям вероятностей
-st.write("""
-### Пояснения:
-**Начальная вероятность проблемы (P(A))** установлена на уровне 50%, что означает, что изначально мы считаем, что вероятность существования проблемы равна 50%. Это типичная оценка для ситуаций неопределенности.""")
-
-# Инструкция перед кнопками интервью
 st.write("""
 ### Инструкция:
-Нажимайте на кнопки ниже в зависимости от результата каждого интервью — подтвердило оно наличие проблемы или нет.
-""")
+Нажимайте на кнопки ниже в зависимости от результата каждого интервью — подтвердило оно наличие проблемы или нет.""")
 
-# Кнопка для подтверждения результата интервью
-if st.button("Интервью подтвердило проблему"):
-    st.session_state.interview_count += 1
-    st.session_state.prior = bayes_update(st.session_state.prior, st.session_state.likelihood, st.session_state.false_positive_rate)
-    st.session_state.history.append(f"Интервью {st.session_state.interview_count}: Вероятность наличия проблемы после подтверждения = {st.session_state.prior:.4f}")
+# Кнопки ввода данных
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Интервью подтвердило проблему"):
+        st.session_state.confirmations += 1
+with col2:
+    if st.button("Интервью не подтвердило проблему"):
+        st.session_state.refutations += 1
 
-# Кнопка для опровержения результата интервью
-if st.button("Интервью не подтвердило проблему"):
-    st.session_state.interview_count += 1
-    st.session_state.prior = bayes_update(st.session_state.prior, 1 - st.session_state.likelihood, 1 - st.session_state.false_positive_rate)
-    st.session_state.history.append(f"Интервью {st.session_state.interview_count}: Вероятность наличия проблемы после опровержения = {st.session_state.prior:.4f}")
+# Расчет бета-распределения
+alpha = st.session_state.confirmations + 1
+beta_param = st.session_state.refutations + 1
 
-# Показ истории обновлений
-st.subheader("История изменений вероятности")
-for entry in st.session_state.history:
-    st.write(entry)
+mean = alpha / (alpha + beta_param)
+lower = beta.ppf(0.025, alpha, beta_param)
+upper = beta.ppf(0.975, alpha, beta_param)
 
-# Показ итоговой информации
-st.subheader("Итоговая информация")
-st.write(f"Всего проведено интервью: {st.session_state.interview_count}")
-st.write(f"Финальная вероятность после всех интервью: {st.session_state.prior:.4f}")
+# Вывод результатов
+st.subheader("Результаты анализа")
+st.write(f"Проведено интервью: {st.session_state.confirmations + st.session_state.refutations}")
+st.write(f"Подтверждений: {st.session_state.confirmations}")
+st.write(f"Опровержений: {st.session_state.refutations}")
 
-# Ввод данных для симуляции Монте-Карло
-st.subheader("Симуляция Монте-Карло для оценки числа компаний с проблемой")
+st.write(f"\n**Оценка вероятности наличия проблемы:** {mean:.3f}")
+st.write(f"95% доверительный интервал: от {lower:.3f} до {upper:.3f}")
 
-# Пояснение к симуляции Монте-Карло перед кнопкой
-st.write("""
-### Симуляция Монте-Карло:
-Используется 10,000 симуляций для точного моделирования вероятности наличия проблемы на рынке, симуляции проводятся на основе % вероятности, который мы получили после проведения интервью . Большое количество симуляций помогает стабилизировать результат и уменьшить случайные колебания.
-""")
+# Ввод размера целевой аудитории
+population_size = st.number_input("Введите количество клиентов в сегменте", value=1000, min_value=1)
+lower_count = int(lower * population_size)
+upper_count = int(upper * population_size)
 
-population_size = st.number_input("Для проведения симуляций укажите размер генеральной совокупности - всех клиентов или целевого сегмента клиентов (например, 1000 компаний или 1 000 000 человек)", min_value=1, value=1000)
+st.write(f"\n**Оценка количества клиентов с проблемой:** от {lower_count} до {upper_count} из {population_size}")
 
-# Объявляем фиксированное количество симуляций
-n_simulations = 10000
+# График (опционально)
+x = np.linspace(0, 1, 1000)
+y = beta.pdf(x, alpha, beta_param)
 
-# Кнопка для запуска симуляции
-if st.button("Запустить симуляцию Монте-Карло"):
-    projected_counts = monte_carlo_simulation(st.session_state.prior, st.session_state.interview_count, population_size, n_simulations)
+fig, ax = plt.subplots()
+ax.plot(x, y, label=f"Beta({alpha},{beta_param})")
+ax.axvline(mean, color='blue', linestyle='--', label=f"Среднее = {mean:.2f}")
+ax.fill_between(x, 0, y, where=(x >= lower) & (x <= upper), color='skyblue', alpha=0.5, label='95% интервал')
+ax.set_title("Бета-распределение вероятности наличия проблемы у клиента")
+ax.set_xlabel("Вероятность")
+ax.set_ylabel("Плотность")
+ax.legend()
+st.pyplot(fig)
 
-    # Расчет доверительного интервала
-    lower_bound = np.percentile(projected_counts, 2.5)
-    upper_bound = np.percentile(projected_counts, 97.5)
+# Пояснение к методам
+st.subheader("Пояснения")
 
-    # Вывод результатов симуляции
-    st.subheader("Результаты симуляции Монте-Карло")
-    #st.write(f"Доверительный интервал для числа компаний с проблемой: от {int(lower_bound)} ({(lower_bound / population_size) * 100:.2f}%) до {int(upper_bound)} ({(upper_bound / population_size) * 100:.2f}%)")
+st.markdown("""
+### Что такое бета-распределение?
+Бета-распределение — это способ оценки вероятности, когда у нас есть данные о числе подтверждений и опровержений. Оно используется для моделирования неопределённости относительно вероятности события (например, того, что клиенты действительно сталкиваются с проблемой).
 
-    # Вывод интерпретации результатов
-    st.write(f"На основе 10,000 симуляций, модель прогнозирует, что в генеральной совокупности из {population_size} компаний/клиентов примерно от {int(lower_bound)} до {int(upper_bound)} компаний/клиентов (доверительный интервал от {(lower_bound / population_size) * 100:.2f}% до {(upper_bound / population_size) * 100:.2f}%) могут иметь проблему.")
+Вместо одного числа, бета-распределение показывает **распределение вероятностей**, где можно выделить среднее значение и диапазон с высокой уверенностью (например, уверенностью в 95%).
 
+### Что такое доверительный интервал в бета-распределении?
+Доверительный интервал — это диапазон значений, в котором с определённой степенью уверенности (в нашем случае — 95%) находится истинная вероятность проблемы в сегменте.
 
-# Пояснение результатов:
-st.subheader("Пояснения к методам")
+Например, если доверительный интервал составляет от 0.32 до 0.68, это означает, что с 95%-ной вероятностью **доля клиентов с проблемой находится между 32% и 68%**.
+Если мы знаем размер сегмента (например, 1000 клиентов), мы можем сказать, что **от 320 до 680 клиентов, скорее всего, сталкиваются с этой проблемой**.
 
-st.write("""
-### Что такое доверительный интервал?
-Доверительный интервал — это диапазон значений, в котором с определенной степенью уверенности (в нашем случае — 95%) можно ожидать, что будет находиться истинное значение. Например, если мы получили доверительный интервал для числа компаний с проблемой от 200 до 300 (или от 20% до 30%), это означает, что с 95%-ной вероятностью количество компаний с проблемой будет диапазоне 200-300.
-
-### Что такое симуляция Монте-Карло?
-Симуляция Монте-Карло — это метод, который использует случайные числа и вероятности для моделирования большого числа возможных сценариев. В нашем случае мы моделируем, сколько компаний может иметь проблему на основе текущей вероятности, проведя тысячи симуляций (в нашем случае: 10,000).
+- Чем больше данных — тем уже и чётче кривая
+- Чем меньше данных — тем шире и неопределённее
 
 ### Что такое теорема Байеса?
-Теорема Байеса — это метод вычисления вероятности события на основе новых данных. В контексте нашего анализа мы обновляем вероятность существования проблемы (вероятность A) каждый раз, когда получаем новый результат интервью — подтвердилось наличие проблемы или нет. Этот метод позволяет постепенно улучшать наши предсказания на основе поступающих данных.
+Теорема Байеса — это метод вычисления вероятности события на основе новых данных. Этот метод позволяет постепенно улучшать наши предсказания на основе поступающих данных.
+
+### Как применяется теорема Байеса?
+Теорема Байеса здесь используется в агрегированной форме: мы не обновляем вероятность после каждого отдельного интервью, а **сразу учитываем всю выборку**.
+
+Когда вы нажимаете «интервью подтвердило проблему» или «интервью не подтвердило» проблему, мы пересчитываем **апостериорное распределение вероятности** на основе накопленных данных.
+
 """)
